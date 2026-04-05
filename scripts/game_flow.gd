@@ -13,14 +13,17 @@ var level_index: int = 0
 
 func start_game() -> void:
 	level_index = 0
+	get_tree().paused = false
 	get_tree().change_scene_to_file(LEVEL_SCENES[level_index])
 
 
 func restart_level() -> void:
+	get_tree().paused = false
 	get_tree().reload_current_scene()
 
 
 func next_level() -> void:
+	get_tree().paused = false
 	level_index += 1
 	if level_index >= LEVEL_SCENES.size():
 		get_tree().change_scene_to_file("res://scenes/victory.tscn")
@@ -29,5 +32,6 @@ func next_level() -> void:
 
 
 func return_to_menu() -> void:
+	get_tree().paused = false
 	level_index = 0
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

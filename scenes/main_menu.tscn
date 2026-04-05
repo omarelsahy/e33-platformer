@@ -44,6 +44,6 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Reach the goal before the timer reaches 0. Timer starts on your first move or jump.
-Space / Jump: start   Esc: quit   R: restart (in level)   Arrows / A D: move"
+Space / Jump: start   Esc: quit   Esc (in level): pause menu   R: restart   Arrows / A D: move"
 horizontal_alignment = 1
 autowrap_mode = 3

@@ -1,11 +1,13 @@
 extends Node2D
 
 const LEVEL_TIME_SEC := 33.0
+const PAUSE_MENU_SCENE := preload("res://scenes/pause_menu.tscn")
 
 @onready var _player: CharacterBody2D = $Player
 @onready var _timer_label: Label = $UILayer/UI/TimerLabel
 @onready var _flash: ColorRect = $UILayer/Flash
 
+var _pause_menu: Control
 var _time_remaining: float = LEVEL_TIME_SEC
 var _timer_running: bool = false
 var _level_cleared: bool = false
@@ -13,6 +15,9 @@ var _is_failing: bool = false
 
 
 func _ready() -> void:
+	set_process_unhandled_input(true)
+	_pause_menu = PAUSE_MENU_SCENE.instantiate() as Control
+	$UILayer.add_child(_pause_menu)
 	_timer_label.text = str(int(ceil(_time_remaining)))
 	_player.first_movement_emitted.connect(_on_first_movement)
 	_connect_goal($Goal)
@@ -31,6 +36,17 @@ func _connect_kill_zones() -> void:
 			var a := node as Area2D
 			if not a.body_entered.is_connected(_on_kill_zone_body_entered):
 				a.body_entered.connect(_on_kill_zone_body_entered)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed(&"ui_cancel"):
+		return
+	if _level_cleared or _is_failing:
+		return
+	if _pause_menu.visible:
+		return
+	_pause_menu.open_menu()
+	get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
