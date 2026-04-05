@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3 uid="uid://cplatblock01"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_pl"]
+size = Vector2(320, 36)
+
+[node name="PlatformBlock" type="StaticBody2D"]
+collision_layer = 1
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+color = Color(0.48, 0.44, 0.52, 1)
+polygon = PackedVector2Array(-160, -18, 160, -18, 160, 18, -160, 18)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_pl")

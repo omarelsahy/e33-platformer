@@ -1,0 +1,82 @@
+[gd_scene load_steps=5 format=3 uid="uid://clvl02"]
+
+[ext_resource type="Script" path="res://scripts/level.gd" id="1_lvl"]
+[ext_resource type="PackedScene" uid="uid://cplayer01" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" uid="uid://cgoal01" path="res://scenes/goal.tscn" id="3_goal"]
+[ext_resource type="PackedScene" uid="uid://ckill01" path="res://scenes/kill_zone.tscn" id="4_kill"]
+[ext_resource type="PackedScene" uid="uid://cplatblock01" path="res://scenes/parts/platform_block.tscn" id="5_plat"]
+
+[node name="Level02" type="Node2D"]
+script = ExtResource("1_lvl")
+
+[node name="Backdrop" type="Polygon2D" parent="."]
+z_index = -100
+color = Color(0.13, 0.12, 0.16, 1)
+polygon = PackedVector2Array(-500, -400, 2800, -400, 2800, 1100, -500, 1100)
+
+[node name="Platforms" type="Node2D" parent="."]
+
+[node name="P1" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(200, 472)
+
+[node name="P2" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(520, 456)
+
+[node name="P3" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(820, 472)
+
+[node name="P4" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(1120, 438)
+
+[node name="P5" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(1460, 468)
+
+[node name="P6" parent="Platforms" instance=ExtResource("5_plat")]
+position = Vector2(1860, 452)
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector2(120, 440)
+
+[node name="Goal" parent="." instance=ExtResource("3_goal")]
+position = Vector2(1860, 420)
+
+[node name="KillZone" parent="." instance=ExtResource("4_kill")]
+position = Vector2(1300, 640)
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="UI" type="Control" parent="UILayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TimerLabel" type="Label" parent="UILayer/UI"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -72.0
+offset_top = 10.0
+offset_right = 72.0
+offset_bottom = 58.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 36
+text = "33"
+horizontal_alignment = 1
+
+[node name="Flash" type="ColorRect" parent="UILayer"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.85, 0.15, 0.2, 0.45)
