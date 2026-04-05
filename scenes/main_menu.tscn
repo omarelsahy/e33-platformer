@@ -27,12 +27,13 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -360.0
-offset_top = -140.0
-offset_right = 360.0
-offset_bottom = 140.0
+offset_left = -380.0
+offset_top = -200.0
+offset_right = 380.0
+offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 14
 
 [node name="Title" type="Label" parent="VBox"]
 layout_mode = 2
@@ -44,6 +45,76 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Reach the goal before the timer reaches 0. Timer starts on your first move or jump.
-Space / Jump: start   Esc: quit   Esc (in level): pause menu   R: restart   Arrows / A D: move"
+Space / Jump: play from level 1   Level select: pick any level   Esc: quit (Esc in level: pause)   R: restart   Arrows / A D: move"
 horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="PlayButton" type="Button" parent="VBox"]
+layout_mode = 2
+text = "Play from level 1"
+
+[node name="LevelSelectButton" type="Button" parent="VBox"]
+layout_mode = 2
+text = "Level select…"
+
+[node name="LevelSelectOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dim" type="ColorRect" parent="LevelSelectOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.05, 0.05, 0.07, 0.82)
+
+[node name="Center" type="CenterContainer" parent="LevelSelectOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="LevelSelectOverlay/Center"]
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="LevelSelectOverlay/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="VBox" type="VBoxContainer" parent="LevelSelectOverlay/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="SelectTitle" type="Label" parent="LevelSelectOverlay/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Select level"
+horizontal_alignment = 1
+
+[node name="LevelButtonGrid" type="GridContainer" parent="LevelSelectOverlay/Center/Panel/Margin/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+columns = 3
+
+[node name="BackButton" type="Button" parent="LevelSelectOverlay/Center/Panel/Margin/VBox"]
+layout_mode = 2
+text = "Back"
+
+[connection signal="pressed" from="VBox/PlayButton" to="." method="_on_play_pressed"]
+[connection signal="pressed" from="VBox/LevelSelectButton" to="." method="_on_level_select_pressed"]
+[connection signal="pressed" from="LevelSelectOverlay/Center/Panel/Margin/VBox/BackButton" to="." method="_on_level_select_back_pressed"]

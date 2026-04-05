@@ -12,7 +12,11 @@ var level_index: int = 0
 
 
 func start_game() -> void:
-	level_index = 0
+	start_level_at(0)
+
+
+func start_level_at(index: int) -> void:
+	level_index = clampi(index, 0, LEVEL_SCENES.size() - 1)
 	get_tree().paused = false
 	get_tree().change_scene_to_file(LEVEL_SCENES[level_index])
 
