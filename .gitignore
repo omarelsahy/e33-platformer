@@ -1,0 +1,10 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+/ios/
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+*.swp
+*.tmp
