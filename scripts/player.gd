@@ -22,6 +22,8 @@ var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
 var _was_on_floor: bool = true
 
+@onready var _sprite: Sprite2D = $Sprite2D
+
 
 func _ready() -> void:
 	add_to_group(&"player")
@@ -53,6 +55,7 @@ func _physics_process(delta: float) -> void:
 
 	if absf(input_x) > INPUT_DEADZONE:
 		velocity.x = move_toward(velocity.x, target_x, accel * delta)
+		_sprite.flip_h = input_x > 0.0
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
 
