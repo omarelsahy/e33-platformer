@@ -6,11 +6,20 @@ signal first_movement_emitted
 const INPUT_DEADZONE := 0.2
 
 @export var move_speed: float = 220.0
+## Horizontal target speed multiplier while holding sprint (ground and air).
+@export var sprint_speed_multiplier: float = 1.45
 @export var acceleration: float = 1200.0
 @export var deceleration: float = 1400.0
 @export var air_acceleration: float = 800.0
+## Extra horizontal acceleration when reversing direction (|opposing input vs current motion).
+@export var turn_acceleration_multiplier: float = 1.85
+## Minimum horizontal speed (px/s) before reversal counts as a "turn" for boosted accel.
+@export var turn_velocity_threshold: float = 35.0
 @export var jump_velocity: float = -420.0
+## Gravity while moving upward (before apex).
 @export var gravity: float = 1500.0
+## Gravity while falling (usually higher than rise for snappier landings).
+@export var gravity_fall: float = 2200.0
 @export var max_fall_speed: float = 600.0
 ## When releasing jump while rising, vertical velocity is scaled by this (smaller = shorter hop).
 @export var jump_cut_multiplier: float = 0.45
@@ -33,6 +42,7 @@ func _physics_process(delta: float) -> void:
 	_was_on_floor = is_on_floor()
 	var input_x: float = Input.get_axis(&"move_left", &"move_right")
 	var jump_pressed: bool = Input.is_action_just_pressed(&"jump")
+	var sprinting: bool = Input.is_action_pressed(&"sprint")
 
 	if not _first_movement_sent:
 		if absf(input_x) > INPUT_DEADZONE or jump_pressed:
@@ -50,17 +60,27 @@ func _physics_process(delta: float) -> void:
 		_jump_buffer_timer = maxf(0.0, _jump_buffer_timer - delta)
 
 	var on_floor: bool = is_on_floor()
+	var speed_mult: float = sprint_speed_multiplier if sprinting else 1.0
+	var target_speed: float = move_speed * speed_mult
+	var target_x: float = input_x * target_speed
 	var accel: float = acceleration if on_floor else air_acceleration
-	var target_x: float = input_x * move_speed
 
 	if absf(input_x) > INPUT_DEADZONE:
-		velocity.x = move_toward(velocity.x, target_x, accel * delta)
+		var opposing_turn: bool = (
+			absf(velocity.x) > turn_velocity_threshold
+			and signf(velocity.x) != signf(input_x)
+		)
+		var step: float = accel * delta
+		if opposing_turn:
+			step *= turn_acceleration_multiplier
+		velocity.x = move_toward(velocity.x, target_x, step)
 		_sprite.flip_h = input_x > 0.0
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
 
 	if not on_floor:
-		velocity.y = minf(velocity.y + gravity * delta, max_fall_speed)
+		var g: float = gravity if velocity.y < 0.0 else gravity_fall
+		velocity.y = minf(velocity.y + g * delta, max_fall_speed)
 
 	var can_jump: bool = on_floor or _coyote_timer > 0.0
 	if _jump_buffer_timer > 0.0 and can_jump:

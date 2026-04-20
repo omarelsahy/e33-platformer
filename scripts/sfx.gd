@@ -1,7 +1,7 @@
 extends Node
 
 ## Optional WAV/OGG at these paths; if missing, calls no-op (no errors).
-const PATH_JUMP := "res://audio/jump.wav"
+const PATH_JUMP := "res://audio/jump.mp3"
 const PATH_LAND := "res://audio/land.wav"
 const PATH_FAIL := "res://audio/fail.wav"
 
