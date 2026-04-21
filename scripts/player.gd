@@ -11,7 +11,7 @@ const LAYER_PLAYER_HURT := 2
 const LAYER_PLAYER_FULL := LAYER_PHYSICS | LAYER_PLAYER_HURT
 
 @export var move_speed: float = 220.0
-## Horizontal target speed multiplier while holding sprint (ground and air).
+## At full horizontal stick deflection (or keyboard), target speed is move_speed * this. Light stick tilt lerps toward base move_speed.
 @export var sprint_speed_multiplier: float = 1.45
 @export var acceleration: float = 1200.0
 @export var deceleration: float = 1400.0
@@ -80,7 +80,6 @@ func _physics_process(delta: float) -> void:
 	_was_on_floor = is_on_floor()
 	var input_x: float = Input.get_axis(&"move_left", &"move_right")
 	var jump_pressed: bool = Input.is_action_just_pressed(&"jump")
-	var sprinting: bool = Input.is_action_pressed(&"sprint")
 	var dash_just: bool = Input.is_action_just_pressed(&"dash")
 
 	if not _first_movement_sent:
@@ -146,8 +145,7 @@ func _physics_process(delta: float) -> void:
 				move_and_slide()
 				return
 
-			var slide_sprint: bool = Input.is_action_pressed(&"sprint")
-			var slide_speed_mult: float = sprint_speed_multiplier if slide_sprint else 1.0
+			var slide_speed_mult: float = _horizontal_speed_multiplier_from_input(input_x)
 			var slide_target: float = input_x * move_speed * slide_speed_mult
 			if absf(input_x) > INPUT_DEADZONE:
 				velocity.x = move_toward(velocity.x, slide_target, acceleration * delta * 1.35)
@@ -178,7 +176,7 @@ func _physics_process(delta: float) -> void:
 			Sfx.play_named(&"land")
 		return
 
-	var speed_mult: float = sprint_speed_multiplier if sprinting else 1.0
+	var speed_mult: float = _horizontal_speed_multiplier_from_input(input_x)
 	var target_speed: float = move_speed * speed_mult
 	var target_x: float = input_x * target_speed
 	var accel: float = acceleration if on_floor else air_acceleration
@@ -221,6 +219,14 @@ func _can_start_dash() -> bool:
 
 func _facing_sign() -> float:
 	return 1.0 if _sprite.flip_h else -1.0
+
+
+func _horizontal_speed_multiplier_from_input(input_x: float) -> float:
+	var ax: float = absf(input_x)
+	if ax <= INPUT_DEADZONE:
+		return 1.0
+	var t: float = clampf((ax - INPUT_DEADZONE) / (1.0 - INPUT_DEADZONE), 0.0, 1.0)
+	return lerpf(1.0, sprint_speed_multiplier, t)
 
 
 func _dash_direction_from_input(on_floor: bool) -> Vector2:
