@@ -76,7 +76,21 @@ func _on_goal_body_entered(body: Node2D) -> void:
 func _on_kill_zone_body_entered(body: Node2D) -> void:
 	if not body.is_in_group(&"player"):
 		return
+	if body.has_method(&"is_hazard_intangible") and body.is_hazard_intangible():
+		return
 	_fail_level()
+
+
+## Call when the player regains hazard collision after a dash; fails if still overlapping a kill zone.
+func check_player_kill_overlap_after_invulnerability(player: Node2D) -> void:
+	if _level_cleared or _is_failing:
+		return
+	if not player.is_in_group(&"player"):
+		return
+	for node in get_tree().get_nodes_in_group(&"kill_zone"):
+		if node is Area2D and (node as Area2D).overlaps_body(player):
+			_fail_level()
+			return
 
 
 func _fail_level() -> void:
