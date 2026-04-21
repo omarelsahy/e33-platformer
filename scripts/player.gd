@@ -39,6 +39,17 @@ const LAYER_PLAYER_FULL := LAYER_PHYSICS | LAYER_PLAYER_HURT
 ## Raw left-stick length must exceed this (circular) to steer air dash; keeps a stable angle from the stick.
 @export var dash_analog_deadzone: float = 0.12
 
+## After a jump eats a same-frame dash press, air dash can start within this window (Rivals-style leniency).
+@export var wavedash_post_jump_dash_buffer: float = 0.14
+## Ground slide after landing an air dash; horizontal speed decays until timer ends or you leave the floor.
+@export var wavedash_slide_duration: float = 0.22
+## Horizontal decay when not steering during wavedash slide (higher = shorter slide).
+@export var wavedash_slide_friction: float = 3400.0
+## Horizontal speed multiplier when an air dash touches the floor (slight pop feels good on pad).
+@export var wavedash_land_speed_scale: float = 1.08
+## If the air dash is mostly vertical, still blend this fraction of dash_speed along facing (e.g. keyboard straight down).
+@export var wavedash_facing_speed_blend: float = 0.42
+
 var _first_movement_sent: bool = false
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
@@ -48,6 +59,10 @@ var _dash_timer: float = 0.0
 var _dash_cooldown_timer: float = 0.0
 var _intangible_timer: float = 0.0
 var _dash_direction: Vector2 = Vector2.RIGHT
+var _dash_started_in_air: bool = false
+var _wavedash_slide_timer: float = 0.0
+## Same-frame jump ate dash: keep trying to start air dash for a short window once airborne.
+var _dash_after_jump_buffer_timer: float = 0.0
 
 @onready var _sprite: Sprite2D = $Sprite2D
 
@@ -89,13 +104,26 @@ func _physics_process(delta: float) -> void:
 	var on_floor: bool = is_on_floor()
 	var can_jump: bool = on_floor or _coyote_timer > 0.0
 
+	_dash_after_jump_buffer_timer = maxf(0.0, _dash_after_jump_buffer_timer - delta)
+	if jump_pressed and can_jump and dash_just:
+		_dash_after_jump_buffer_timer = wavedash_post_jump_dash_buffer
+
 	var was_intangible: bool = _intangible_timer > 0.0
 	if was_intangible:
 		_intangible_timer = maxf(0.0, _intangible_timer - delta)
 
-	if _dash_timer <= 0.0:
-		if dash_just and _can_start_dash() and not (jump_pressed and can_jump):
+	if _dash_timer <= 0.0 and _wavedash_slide_timer <= 0.0:
+		var auto_air_dash_from_jump: bool = (
+			_dash_after_jump_buffer_timer > 0.0
+			and not on_floor
+			and _can_start_dash()
+		)
+		if auto_air_dash_from_jump:
+			_start_dash(false)
+			_dash_after_jump_buffer_timer = 0.0
+		elif dash_just and _can_start_dash() and not (jump_pressed and can_jump):
 			_start_dash(on_floor)
+			_dash_after_jump_buffer_timer = 0.0
 
 	if _intangible_timer > 0.0:
 		collision_layer = LAYER_PHYSICS
@@ -104,10 +132,48 @@ func _physics_process(delta: float) -> void:
 		if was_intangible and _intangible_timer <= 0.0:
 			_notify_kill_overlap_if_stuck()
 
+	if _wavedash_slide_timer > 0.0:
+		_wavedash_slide_timer = maxf(0.0, _wavedash_slide_timer - delta)
+		if not is_on_floor():
+			_wavedash_slide_timer = 0.0
+		else:
+			if _jump_buffer_timer > 0.0 and can_jump:
+				velocity.y = jump_velocity
+				_jump_buffer_timer = 0.0
+				_coyote_timer = 0.0
+				_wavedash_slide_timer = 0.0
+				Sfx.play_named(&"jump")
+				move_and_slide()
+				return
+
+			var slide_sprint: bool = Input.is_action_pressed(&"sprint")
+			var slide_speed_mult: float = sprint_speed_multiplier if slide_sprint else 1.0
+			var slide_target: float = input_x * move_speed * slide_speed_mult
+			if absf(input_x) > INPUT_DEADZONE:
+				velocity.x = move_toward(velocity.x, slide_target, acceleration * delta * 1.35)
+				_sprite.flip_h = input_x > 0.0
+			else:
+				velocity.x = move_toward(velocity.x, 0.0, wavedash_slide_friction * delta)
+			velocity.y = 0.0
+			move_and_slide()
+			return
+
 	if _dash_timer > 0.0:
 		_dash_timer = maxf(0.0, _dash_timer - delta)
 		velocity = _dash_direction * dash_speed
 		move_and_slide()
+		if _dash_started_in_air and is_on_floor():
+			var land_x: float = _dash_direction.x * dash_speed * wavedash_land_speed_scale
+			if absf(_dash_direction.x) < 0.18:
+				land_x += _facing_sign() * dash_speed * wavedash_facing_speed_blend
+			velocity = Vector2(land_x, 0.0)
+			_dash_timer = 0.0
+			_wavedash_slide_timer = wavedash_slide_duration
+			_dash_started_in_air = false
+			if not _was_on_floor:
+				Sfx.play_named(&"land")
+			move_and_slide()
+			return
 		if is_on_floor() and not _was_on_floor and velocity.y >= -1.0:
 			Sfx.play_named(&"land")
 		return
@@ -211,6 +277,7 @@ func _start_dash(on_floor: bool) -> void:
 	_dash_timer = dash_duration
 	_dash_cooldown_timer = dash_cooldown
 	_intangible_timer = dash_intangibility_duration
+	_dash_started_in_air = not on_floor
 
 
 func _notify_kill_overlap_if_stuck() -> void:
