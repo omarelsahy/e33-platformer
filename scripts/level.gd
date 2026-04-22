@@ -81,7 +81,7 @@ func _on_kill_zone_body_entered(body: Node2D) -> void:
 	_fail_level()
 
 
-## Call when the player regains hazard collision after a dash; fails if still overlapping a kill zone.
+## Call when the player regains hazard collision after intangibility (airdodge/parry); fails if still overlapping a kill zone.
 func check_player_kill_overlap_after_invulnerability(player: Node2D) -> void:
 	if _level_cleared or _is_failing:
 		return

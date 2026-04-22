@@ -31,23 +31,33 @@ const LAYER_PLAYER_FULL := LAYER_PHYSICS | LAYER_PLAYER_HURT
 @export var coyote_time: float = 0.1
 @export var jump_buffer_time: float = 0.1
 
-@export var dash_speed: float = 520.0
-@export var dash_duration: float = 0.14
-@export var dash_cooldown: float = 0.45
-## Time hazard Areas ignore the player (hurt layer off). Often >= dash_duration.
-@export var dash_intangibility_duration: float = 0.2
-## Raw left-stick length must exceed this (circular) to steer air dash; keeps a stable angle from the stick.
-@export var dash_analog_deadzone: float = 0.12
+## SSBM-style directional airdodge (shared input with ground parry).
+@export var airdodge_speed: float = 480.0
+@export var airdodge_duration: float = 12.0 / 60.0
+@export var dodge_cooldown: float = 0.45
+## Hazard intangibility during airdodge (often slightly longer than movement).
+@export var airdodge_intangibility_duration: float = 0.18
+## Raw left-stick length must exceed this to steer airdodge angle.
+@export var airdodge_analog_deadzone: float = 0.12
 
-## After a jump eats a same-frame dash press, air dash can start within this window (Rivals-style leniency).
+## Ground parry: short active intangibility, then punishable endlag.
+@export var parry_active_duration: float = 3.0 / 60.0
+@export var parry_intangibility_duration: float = 3.0 / 60.0
+@export var parry_endlag_duration: float = 16.0 / 60.0
+
+## After a jump eats a same-frame dodge press, airdodge auto-starts within this window once airborne (jump-first buffer).
 @export var wavedash_post_jump_dash_buffer: float = 0.14
-## Ground slide after landing an air dash; horizontal speed decays until timer ends or you leave the floor.
+## After any ground/coyote jump, airdodge within this window gets wavedash-style down-forward angle nudge.
+@export var rivals_post_jump_dodge_window: float = 0.12
+## Grounded slowdown after a wavedash slide ends (RoA2 cites ~10f landing lag after air dodge into ground).
+@export var wavedash_landing_lag_seconds: float = 10.0 / 60.0
+## Ground slide after landing an airdodge; horizontal speed decays until timer ends or you leave the floor.
 @export var wavedash_slide_duration: float = 0.22
 ## Horizontal decay when not steering during wavedash slide (higher = shorter slide).
 @export var wavedash_slide_friction: float = 3400.0
-## Horizontal speed multiplier when an air dash touches the floor (slight pop feels good on pad).
+## Horizontal speed multiplier when an airdodge touches the floor (slight pop feels good on pad).
 @export var wavedash_land_speed_scale: float = 1.08
-## If the air dash is mostly vertical, still blend this fraction of dash_speed along facing (e.g. keyboard straight down).
+## If the airdodge is mostly vertical, still blend this fraction of airdodge_speed along facing (e.g. keyboard straight down).
 @export var wavedash_facing_speed_blend: float = 0.42
 
 var _first_movement_sent: bool = false
@@ -55,14 +65,20 @@ var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
 var _was_on_floor: bool = true
 
-var _dash_timer: float = 0.0
-var _dash_cooldown_timer: float = 0.0
+var _airdodge_timer: float = 0.0
+var _dodge_cooldown_timer: float = 0.0
 var _intangible_timer: float = 0.0
-var _dash_direction: Vector2 = Vector2.RIGHT
-var _dash_started_in_air: bool = false
+var _airdodge_direction: Vector2 = Vector2.RIGHT
+var _airdodge_started_in_air: bool = false
 var _wavedash_slide_timer: float = 0.0
-## Same-frame jump ate dash: keep trying to start air dash for a short window once airborne.
+## Same-frame jump ate dodge: keep trying to start airdodge for a short window once airborne.
 var _dash_after_jump_buffer_timer: float = 0.0
+## Any jump from floor/coyote: next airdodge within this window uses wavedash angle nudge.
+var _rivals_post_jump_dodge_timer: float = 0.0
+var _wavedash_landing_lag_timer: float = 0.0
+var _wavedash_slide_jump_cancelled: bool = false
+var _parry_active_timer: float = 0.0
+var _parry_endlag_timer: float = 0.0
 
 @onready var _sprite: Sprite2D = $Sprite2D
 
@@ -80,10 +96,10 @@ func _physics_process(delta: float) -> void:
 	_was_on_floor = is_on_floor()
 	var input_x: float = Input.get_axis(&"move_left", &"move_right")
 	var jump_pressed: bool = Input.is_action_just_pressed(&"jump")
-	var dash_just: bool = Input.is_action_just_pressed(&"dash")
+	var dodge_just: bool = Input.is_action_just_pressed(&"dash")
 
 	if not _first_movement_sent:
-		if absf(input_x) > INPUT_DEADZONE or jump_pressed or dash_just:
+		if absf(input_x) > INPUT_DEADZONE or jump_pressed or dodge_just:
 			_first_movement_sent = true
 			first_movement_emitted.emit()
 
@@ -97,32 +113,45 @@ func _physics_process(delta: float) -> void:
 	else:
 		_jump_buffer_timer = maxf(0.0, _jump_buffer_timer - delta)
 
-	if _dash_cooldown_timer > 0.0:
-		_dash_cooldown_timer = maxf(0.0, _dash_cooldown_timer - delta)
+	if _dodge_cooldown_timer > 0.0:
+		_dodge_cooldown_timer = maxf(0.0, _dodge_cooldown_timer - delta)
 
 	var on_floor: bool = is_on_floor()
 	var can_jump: bool = on_floor or _coyote_timer > 0.0
 
 	_dash_after_jump_buffer_timer = maxf(0.0, _dash_after_jump_buffer_timer - delta)
-	if jump_pressed and can_jump and dash_just:
+	_rivals_post_jump_dodge_timer = maxf(0.0, _rivals_post_jump_dodge_timer - delta)
+	if jump_pressed and can_jump and dodge_just:
 		_dash_after_jump_buffer_timer = wavedash_post_jump_dash_buffer
 
 	var was_intangible: bool = _intangible_timer > 0.0
 	if was_intangible:
 		_intangible_timer = maxf(0.0, _intangible_timer - delta)
 
-	if _dash_timer <= 0.0 and _wavedash_slide_timer <= 0.0:
-		var auto_air_dash_from_jump: bool = (
+	if (
+		_airdodge_timer <= 0.0
+		and _wavedash_slide_timer <= 0.0
+		and _wavedash_landing_lag_timer <= 0.0
+		and _parry_active_timer <= 0.0
+		and _parry_endlag_timer <= 0.0
+	):
+		var auto_airdodge_from_jump: bool = (
 			_dash_after_jump_buffer_timer > 0.0
 			and not on_floor
-			and _can_start_dash()
+			and _can_use_dodge()
 		)
-		if auto_air_dash_from_jump:
-			_start_dash(false)
+		if auto_airdodge_from_jump:
+			_start_airdodge(true)
 			_dash_after_jump_buffer_timer = 0.0
-		elif dash_just and _can_start_dash() and not (jump_pressed and can_jump):
-			_start_dash(on_floor)
+			_rivals_post_jump_dodge_timer = 0.0
+		elif dodge_just and _can_use_dodge() and not (jump_pressed and can_jump):
+			if on_floor:
+				_start_parry()
+			else:
+				var rivals_steer: bool = _rivals_post_jump_dodge_timer > 0.0
+				_start_airdodge(rivals_steer)
 			_dash_after_jump_buffer_timer = 0.0
+			_rivals_post_jump_dodge_timer = 0.0
 
 	if _intangible_timer > 0.0:
 		collision_layer = LAYER_PHYSICS
@@ -131,16 +160,79 @@ func _physics_process(delta: float) -> void:
 		if was_intangible and _intangible_timer <= 0.0:
 			_notify_kill_overlap_if_stuck()
 
+	if _wavedash_landing_lag_timer > 0.0:
+		_wavedash_landing_lag_timer = maxf(0.0, _wavedash_landing_lag_timer - delta)
+		if not is_on_floor():
+			_wavedash_landing_lag_timer = 0.0
+		else:
+			var lag_speed_mult: float = _horizontal_speed_multiplier_from_input(input_x)
+			var lag_target_speed: float = move_speed * lag_speed_mult
+			var lag_target_x: float = input_x * lag_target_speed
+			if absf(input_x) > INPUT_DEADZONE:
+				var lag_opposing: bool = (
+					absf(velocity.x) > turn_velocity_threshold
+					and signf(velocity.x) != signf(input_x)
+				)
+				var lag_step: float = acceleration * delta
+				if lag_opposing:
+					lag_step *= turn_acceleration_multiplier
+				velocity.x = move_toward(velocity.x, lag_target_x, lag_step)
+				_sprite.flip_h = input_x > 0.0
+			else:
+				velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
+			velocity.y = 0.0
+			move_and_slide()
+			return
+
+	if _parry_active_timer > 0.0:
+		_parry_active_timer = maxf(0.0, _parry_active_timer - delta)
+		if not is_on_floor():
+			_parry_active_timer = 0.0
+		else:
+			velocity = Vector2.ZERO
+			move_and_slide()
+			if _parry_active_timer <= 0.0:
+				_parry_endlag_timer = parry_endlag_duration
+			return
+
+	if _parry_endlag_timer > 0.0:
+		_parry_endlag_timer = maxf(0.0, _parry_endlag_timer - delta)
+		if not is_on_floor():
+			_parry_endlag_timer = 0.0
+		else:
+			var parry_lag_speed_mult: float = _horizontal_speed_multiplier_from_input(input_x)
+			var parry_lag_target_speed: float = move_speed * parry_lag_speed_mult
+			var parry_lag_target_x: float = input_x * parry_lag_target_speed
+			if absf(input_x) > INPUT_DEADZONE:
+				var parry_opposing: bool = (
+					absf(velocity.x) > turn_velocity_threshold
+					and signf(velocity.x) != signf(input_x)
+				)
+				var parry_step: float = acceleration * delta * 0.65
+				if parry_opposing:
+					parry_step *= turn_acceleration_multiplier
+				velocity.x = move_toward(velocity.x, parry_lag_target_x, parry_step)
+				_sprite.flip_h = input_x > 0.0
+			else:
+				velocity.x = move_toward(velocity.x, 0.0, deceleration * delta * 1.2)
+			velocity.y = 0.0
+			move_and_slide()
+			return
+
 	if _wavedash_slide_timer > 0.0:
+		var prev_slide: float = _wavedash_slide_timer
 		_wavedash_slide_timer = maxf(0.0, _wavedash_slide_timer - delta)
 		if not is_on_floor():
 			_wavedash_slide_timer = 0.0
+			_wavedash_slide_jump_cancelled = false
 		else:
 			if _jump_buffer_timer > 0.0 and can_jump:
+				_wavedash_slide_jump_cancelled = true
 				velocity.y = jump_velocity
 				_jump_buffer_timer = 0.0
 				_coyote_timer = 0.0
 				_wavedash_slide_timer = 0.0
+				_rivals_post_jump_dodge_timer = rivals_post_jump_dodge_window
 				Sfx.play_named(&"jump")
 				move_and_slide()
 				return
@@ -154,20 +246,27 @@ func _physics_process(delta: float) -> void:
 				velocity.x = move_toward(velocity.x, 0.0, wavedash_slide_friction * delta)
 			velocity.y = 0.0
 			move_and_slide()
+			if prev_slide > 0.0 and _wavedash_slide_timer <= 0.0 and is_on_floor():
+				if not _wavedash_slide_jump_cancelled:
+					_wavedash_landing_lag_timer = wavedash_landing_lag_seconds
+				_wavedash_slide_jump_cancelled = false
 			return
 
-	if _dash_timer > 0.0:
-		_dash_timer = maxf(0.0, _dash_timer - delta)
-		velocity = _dash_direction * dash_speed
+	if _airdodge_timer > 0.0:
+		_airdodge_timer = maxf(0.0, _airdodge_timer - delta)
+		velocity = _airdodge_direction * airdodge_speed
+		if absf(_airdodge_direction.x) > 0.2:
+			_sprite.flip_h = _airdodge_direction.x > 0.0
 		move_and_slide()
-		if _dash_started_in_air and is_on_floor():
-			var land_x: float = _dash_direction.x * dash_speed * wavedash_land_speed_scale
-			if absf(_dash_direction.x) < 0.18:
-				land_x += _facing_sign() * dash_speed * wavedash_facing_speed_blend
+		if _airdodge_started_in_air and is_on_floor():
+			var land_x: float = _airdodge_direction.x * airdodge_speed * wavedash_land_speed_scale
+			if absf(_airdodge_direction.x) < 0.18:
+				land_x += _facing_sign() * airdodge_speed * wavedash_facing_speed_blend
 			velocity = Vector2(land_x, 0.0)
-			_dash_timer = 0.0
+			_airdodge_timer = 0.0
 			_wavedash_slide_timer = wavedash_slide_duration
-			_dash_started_in_air = false
+			_airdodge_started_in_air = false
+			_wavedash_slide_jump_cancelled = false
 			if not _was_on_floor:
 				Sfx.play_named(&"land")
 			move_and_slide()
@@ -202,6 +301,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y = jump_velocity
 		_jump_buffer_timer = 0.0
 		_coyote_timer = 0.0
+		_rivals_post_jump_dodge_timer = rivals_post_jump_dodge_window
 		Sfx.play_named(&"jump")
 
 	if Input.is_action_just_released(&"jump") and velocity.y < 0.0:
@@ -213,8 +313,14 @@ func _physics_process(delta: float) -> void:
 		Sfx.play_named(&"land")
 
 
-func _can_start_dash() -> bool:
-	return _dash_timer <= 0.0 and _dash_cooldown_timer <= 0.0
+func _can_use_dodge() -> bool:
+	return (
+		_airdodge_timer <= 0.0
+		and _dodge_cooldown_timer <= 0.0
+		and _wavedash_landing_lag_timer <= 0.0
+		and _parry_active_timer <= 0.0
+		and _parry_endlag_timer <= 0.0
+	)
 
 
 func _facing_sign() -> float:
@@ -229,20 +335,10 @@ func _horizontal_speed_multiplier_from_input(input_x: float) -> float:
 	return lerpf(1.0, sprint_speed_multiplier, t)
 
 
-func _dash_direction_from_input(on_floor: bool) -> Vector2:
-	if on_floor:
-		var ix: float = Input.get_axis(&"move_left", &"move_right")
-		if absf(ix) > INPUT_DEADZONE:
-			return Vector2(signf(ix), 0.0)
-		return Vector2(_facing_sign(), 0.0)
-
-	return _air_dash_direction_from_input()
-
-
-## Uses raw joy axes when a pad is connected so the dash matches stick angle; otherwise keyboard vector.
-func _air_dash_direction_from_input() -> Vector2:
+## Uses raw joy axes when a pad is connected so the airdodge matches stick angle; otherwise keyboard vector.
+func _airdodge_direction_from_input() -> Vector2:
 	var analog: Vector2 = _strongest_left_stick_vector()
-	if analog.length() > dash_analog_deadzone:
+	if analog.length() > airdodge_analog_deadzone:
 		return analog.normalized()
 
 	var digital: Vector2 = Input.get_vector(
@@ -269,21 +365,35 @@ func _strongest_left_stick_vector() -> Vector2:
 	return best
 
 
-func _start_dash(on_floor: bool) -> void:
-	_dash_direction = _dash_direction_from_input(on_floor)
-	if _dash_direction.length_squared() < 0.0001:
-		_dash_direction = Vector2.RIGHT
-	else:
-		_dash_direction = _dash_direction.normalized()
-	if on_floor:
-		_dash_direction = Vector2(signf(_dash_direction.x), 0.0)
-		if _dash_direction.x == 0.0:
-			_dash_direction = Vector2(_facing_sign(), 0.0)
+## Rivals-style: shallow air dodges become a bit more down-forward so landing into slide is consistent.
+func _apply_rivals_wavedash_air_angle() -> void:
+	var d: Vector2 = _airdodge_direction
+	if absf(d.y) >= 0.22:
+		return
+	var hx: float = signf(d.x) if absf(d.x) > 0.12 else _facing_sign()
+	_airdodge_direction = Vector2(hx * 0.88, 0.42).normalized()
 
-	_dash_timer = dash_duration
-	_dash_cooldown_timer = dash_cooldown
-	_intangible_timer = dash_intangibility_duration
-	_dash_started_in_air = not on_floor
+
+func _start_airdodge(rivals_wavedash_steer: bool = false) -> void:
+	_airdodge_direction = _airdodge_direction_from_input()
+	if _airdodge_direction.length_squared() < 0.0001:
+		_airdodge_direction = Vector2.RIGHT
+	else:
+		_airdodge_direction = _airdodge_direction.normalized()
+	if rivals_wavedash_steer:
+		_apply_rivals_wavedash_air_angle()
+
+	_airdodge_timer = airdodge_duration
+	_dodge_cooldown_timer = dodge_cooldown
+	_intangible_timer = airdodge_intangibility_duration
+	_airdodge_started_in_air = true
+
+
+func _start_parry() -> void:
+	_parry_active_timer = parry_active_duration
+	_dodge_cooldown_timer = dodge_cooldown
+	_intangible_timer = parry_intangibility_duration
+	velocity = Vector2.ZERO
 
 
 func _notify_kill_overlap_if_stuck() -> void:
